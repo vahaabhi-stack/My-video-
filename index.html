@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="MyVideo पर वीडियो खोजें और YouTube प्लेयर में देखें।">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <title>MyVideo — वीडियो खोजें</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#151c2f; --muted:#aab4c8; --text:#f7f8fc; --accent:#ff4545; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif; }
+    header { position:sticky; top:0; z-index:2; background:#101629f2; border-bottom:1px solid #293149; padding:15px; }
+    .top { max-width:1000px; margin:auto; display:flex; align-items:center; gap:12px; }
+    .logo { font-size:1.3rem; font-weight:800; white-space:nowrap; }
+    .logo span { color:var(--accent); }
+    form { flex:1; display:flex; gap:8px; }
+    input { width:100%; min-width:0; border:1px solid #39445f; background:#0b1020; color:white; padding:12px; border-radius:12px; font-size:1rem; }
+    button { border:0; background:var(--accent); color:white; padding:12px 15px; border-radius:12px; font-size:1rem; font-weight:700; cursor:pointer; }
+    main { max-width:1000px; margin:22px auto; padding:0 14px 36px; }
+    .intro { color:var(--muted); line-height:1.6; }
+    #status { color:var(--muted); margin:18px 0; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+    .card { overflow:hidden; border:1px solid #293149; background:var(--panel); border-radius:16px; cursor:pointer; }
+    .thumb { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; background:#252d43; }
+    .details { padding:12px; }
+    .title { font-size:1rem; font-weight:700; line-height:1.4; margin:0 0 8px; }
+    .channel,.date { color:var(--muted); font-size:.88rem; margin:4px 0; }
+    .empty { background:var(--panel); border-radius:14px; padding:18px; line-height:1.6; }
+    footer { max-width:1000px; padding:0 14px 24px; margin:auto; color:var(--muted); font-size:.8rem; line-height:1.5; }
+    .modal { display:none; position:fixed; inset:0; z-index:5; background:#000d; padding:18px; align-items:center; justify-content:center; }
+    .modal.open { display:flex; }
+    .modal-inner { width:min(900px,100%); background:#111827; border:1px solid #3b465e; border-radius:16px; padding:12px; }
+    .modal-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:10px; }
+    .close { background:#30394e; }
+    .player { width:100%; aspect-ratio:16/9; border:0; border-radius:10px; background:#000; }
+    @media(max-width:520px) { .top { flex-wrap:wrap; } .logo { width:100%; } form { width:100%; flex-basis:100%; } button { padding:11px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <div class="logo">▶ <span>My</span>Video</div>
+      <form id="searchForm">
+        <input id="query" type="search" placeholder="वीडियो खोजें, जैसे क्रिकेट..." aria-label="वीडियो खोजें" maxlength="120" required>
+        <button type="submit">सर्च</button>
+      </form>
+    </div>
+  </header>
+
+  <main>
+    <h1>वीडियो खोजें</h1>
+    <p class="intro">YouTube के सार्वजनिक वीडियो खोजें। किसी वीडियो पर टैप करके उसे यहाँ प्लेयर में खोलें।</p>
+    <div id="status" role="status">शुरू करने के लिए ऊपर सर्च में कोई शब्द लिखें।</div>
+    <section id="results" class="grid" aria-label="सर्च परिणाम"></section>
+  </main>
+
+  <footer>
+    यह MyVideo का शुरुआती प्रोटोटाइप है। वीडियो और उनकी जानकारी YouTube से आती है। यह YouTube का आधिकारिक ऐप नहीं है और Google/YouTube से संबद्ध नहीं है। YouTube की शर्तों और API नीतियों का पालन करें।
+  </footer>
+
+  <div id="modal" class="modal" role="dialog" aria-modal="true" aria-label="वीडियो प्लेयर">
+    <div class="modal-inner">
+      <div class="modal-head">
+        <strong id="modalTitle">वीडियो</strong>
+        <button class="close" id="closeModal" type="button">बंद करें ✕</button>
+      </div>
+      <iframe id="player" class="player" title="YouTube वीडियो प्लेयर"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      <p><a id="youtubeLink" href="#" target="_blank" rel="noopener noreferrer">YouTube पर खोलें</a></p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById("searchForm");
+    const queryInput = document.getElementById("query");
+    const results = document.getElementById("results");
+    const statusBox = document.getElementById("status");
+    const modal = document.getElementById("modal");
+    const player = document.getElementById("player");
+    const modalTitle = document.getElementById("modalTitle");
+    const youtubeLink = document.getElementById("youtubeLink");
+
+    function showStatus(message) { statusBox.textContent = message; }
+    function formatDate(value) {
+      if (!value) return "";
+      try { return new Date(value).toLocaleDateString("hi-IN"); }
+      catch { return ""; }
+    }
+
+    function openVideo(video) {
+      modalTitle.textContent = video.title;
+      player.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(video.id)}?autoplay=1`;
+      youtubeLink.href = `https://www.youtube.com/watch?v=${encodeURIComponent(video.id)}`;
+      modal.classList.add("open");
+    }
+
+    function closeVideo() {
+      modal.classList.remove("open");
+      player.src = "";
+    }
+
+    document.getElementById("closeModal").addEventListener("click", closeVideo);
+    modal.addEventListener("click", event => { if (event.target === modal) closeVideo(); });
+    document.addEventListener("keydown", event => { if (event.key === "Escape") closeVideo(); });
+
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+    }
+
+    function renderVideos(videos) {
+      results.replaceChildren();
+      if (!videos.length) {
+        const box = document.createElement("div");
+        box.className = "empty";
+        box.textContent = "इस शब्द के लिए वीडियो नहीं मिले। दूसरा शब्द लिखकर देखें।";
+        results.appendChild(box);
+        return;
+      }
+
+      for (const video of videos) {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-label", `वीडियो चलाएँ: ${video.title}`);
+
+        const img = document.createElement("img");
+        img.className = "thumb";
+        img.src = video.thumbnail;
+        img.alt = "";
+        img.loading = "lazy";
+
+        const details = document.createElement("div");
+        details.className = "details";
+        const title = document.createElement("h2");
+        title.className = "title";
+        title.textContent = video.title;
+        const channel = document.createElement("p");
+        channel.className = "channel";
+        channel.textContent = video.channel;
+        const date = document.createElement("p");
+        date.className = "date";
+        date.textContent = formatDate(video.publishedAt);
+
+        details.append(title, channel, date);
+        card.append(img, details);
+        card.addEventListener("click", () => openVideo(video));
+        card.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openVideo(video);
+          }
+        });
+        results.appendChild(card);
+      }
+    }
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const q = queryInput.value.trim();
+      if (!q) return;
+
+      results.replaceChildren();
+      showStatus("वीडियो खोजे जा रहे हैं…");
+      const submitButton = form.querySelector("button");
+      submitButton.disabled = true;
+      submitButton.textContent = "खोज रहे हैं…";
+
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "सर्च नहीं हो पाया।");
+        if (data.setupRequired) {
+          results.replaceChildren();
+          const box = document.createElement("div");
+          box.className = "empty";
+          const title = document.createElement("p");
+          title.textContent = "MyVideo का YouTube API अभी कनेक्ट नहीं है। इस बीच यही सर्च YouTube पर खोल सकते हैं।";
+          const link = document.createElement("a");
+          link.href = data.youtubeSearchUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = `YouTube पर “${data.query}” खोजें`;
+          link.style.color = "#ff7777";
+          link.style.fontWeight = "700";
+          link.style.display = "inline-block";
+          link.style.marginTop = "8px";
+          box.append(title, link);
+          results.appendChild(box);
+          showStatus("डेमो मोड: API कनेक्शन सेट होने पर परिणाम MyVideo में दिखेंगे।");
+        } else {
+          renderVideos(data.videos || []);
+          showStatus(`${(data.videos || []).length} परिणाम मिले।`);
+        }
+      } catch (error) {
+        showStatus(error.message || "कनेक्शन में समस्या है।");
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "सर्च";
+      }
+    });
+  </script>
+</body>
+</html>
